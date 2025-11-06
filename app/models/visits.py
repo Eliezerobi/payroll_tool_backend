@@ -37,7 +37,11 @@ class Visit(Base):
     date_billed: Mapped[Optional[Date]] = mapped_column(Date)
     billed_comment: Mapped[Optional[str]] = mapped_column(Text)
     date_of_birth: Mapped[Optional[Date]] = mapped_column(Date)
-    address: Mapped[Optional[str]] = mapped_column(Text)
+    patient_street1: Mapped[Optional[str]] = mapped_column(String(255))
+    patient_street2: Mapped[Optional[str]] = mapped_column(String(255))
+    patient_city: Mapped[Optional[str]] = mapped_column(String(100))
+    patient_state: Mapped[Optional[str]] = mapped_column(String(50))
+    patient_zip: Mapped[Optional[str]] = mapped_column(String(20))
     case_type: Mapped[Optional[str]] = mapped_column(String(100))
     location: Mapped[Optional[str]] = mapped_column(String(100))
     hold: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -54,6 +58,9 @@ class Visit(Base):
     uploaded_at: Mapped[datetime] = mapped_column(TIMESTAMP, server_default=func.now())
     review_needed: Mapped[bool] = mapped_column(Boolean, default=False)
     review_reason: Mapped[Optional[str]] = mapped_column(Text)
+    case_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    time_in: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP, nullable=True)
+    time_out: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP, nullable=True)
     review_by: Mapped[Optional[int]] = mapped_column(
         BigInteger,
         ForeignKey("users.id", ondelete="SET NULL"),  # 👈 enforce FK to users table

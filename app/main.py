@@ -16,6 +16,7 @@ from app.routes import (
     history,                    # /api/history/*
     upload_patient_file,       # /api/upload/patients
     export_billable_notes,  # /api/export/billable-notes
+    import_hellonoteAPI_visits,  # /api/import-hellonote-visits
     # visits, invoices, etc. can be added later
 )
 
@@ -42,11 +43,12 @@ origins = (
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins or ["*"],  # fallback to "*" if empty
+    allow_origins=["https://visits.paradigmops.com", "http://localhost:5173"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 
 # ---------------------------------------------------------------------
 # Public routes (no auth required)
@@ -70,6 +72,7 @@ protected.include_router(upload_patient_file.router, tags=["upload"])
 protected.include_router(whoami.router, tags=["auth"])
 protected.include_router(history.router, tags=["history"])
 protected.include_router(export_billable_notes.router, tags=["export"])
+protected.include_router(import_hellonoteAPI_visits.router, tags=["import"])
 # protected.include_router(visits.router, tags=["visits"])
 # protected.include_router(invoices.router, tags=["invoices"])
 
