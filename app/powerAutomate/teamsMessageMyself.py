@@ -4,11 +4,11 @@ from dotenv import load_dotenv
 from datetime import datetime
 
 # -----------------------------------------------------------
-# Load environment variables (for POWER_AUTOMATE_URL)
+# Load environment variables (for POWER_AUTOMATE_MYSELF)
 # -----------------------------------------------------------
 env_path = os.path.join(os.path.dirname(__file__), "../../.env")
 load_dotenv(dotenv_path=env_path)
-POWER_AUTOMATE_URL = os.getenv("POWER_AUTOMATE_URL")
+POWER_AUTOMATE_MYSELF = os.getenv("POWER_AUTOMATE_MYSELF")
 
 
 # -----------------------------------------------------------
@@ -24,8 +24,8 @@ def notify_teams(status: str, stage: str, message: str, script_name: str = None)
         message (str): Message text to include
         script_name (str, optional): The name of the script sending this notification
     """
-    if not POWER_AUTOMATE_URL:
-        print("⚠️ No POWER_AUTOMATE_URL found in .env — skipping Teams notification.")
+    if not POWER_AUTOMATE_MYSELF:
+        print("⚠️ No POWER_AUTOMATE_MYSELF found in .env — skipping Teams notification.")
         return
 
     # Determine emoji for status
@@ -43,7 +43,7 @@ def notify_teams(status: str, stage: str, message: str, script_name: str = None)
     }
 
     try:
-        response = requests.post(POWER_AUTOMATE_URL, json=payload, timeout=10)
+        response = requests.post(POWER_AUTOMATE_MYSELF, json=payload, timeout=10)
         response.raise_for_status()
         print(f"📤 Teams notified ({status} @ {stage}) — {full_message}")
     except Exception as e:

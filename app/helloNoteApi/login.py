@@ -17,12 +17,12 @@ def hellonote_login() -> dict:
 
     EMAIL = os.getenv("HELLONOTE_EMAIL")
     PASSWORD = os.getenv("HELLONOTE_PASSWORD")
-    POWER_AUTOMATE_URL = os.getenv("POWER_AUTOMATE_URL")
+    POWER_AUTOMATE_MYSELF = os.getenv("POWER_AUTOMATE_MYSELF")
 
     if not EMAIL or not PASSWORD:
         raise Exception(f"Missing HELLONOTE_EMAIL or HELLONOTE_PASSWORD in {env_path}")
-    if not POWER_AUTOMATE_URL:
-        raise Exception(f"Missing POWER_AUTOMATE_URL in {env_path}")
+    if not POWER_AUTOMATE_MYSELF:
+        raise Exception(f"Missing POWER_AUTOMATE_MYSELF in {env_path}")
 
     # -----------------------------------------------------------------
     # 2️⃣ Build request body and headers
@@ -70,7 +70,7 @@ def hellonote_login() -> dict:
             "message": f"Logged in successfully as {result['userName']}",
             "token_valid_hours": result["expireInSeconds"] / 3600
         }
-        requests.post(POWER_AUTOMATE_URL, json=success_payload, timeout=10)
+        requests.post(POWER_AUTOMATE_MYSELF, json=success_payload, timeout=10)
         print("📤 Success notification sent to Power Automate.")
         
         return result
@@ -87,7 +87,7 @@ def hellonote_login() -> dict:
                 "status": "error",
                 "message": error_message
             }
-            requests.post(POWER_AUTOMATE_URL, json=fail_payload, timeout=10)
+            requests.post(POWER_AUTOMATE_MYSELF, json=fail_payload, timeout=10)
             print("📤 Error notification sent to Power Automate.")
         except Exception as notify_err:
             print(f"⚠️ Could not notify Power Automate: {notify_err}")

@@ -43,7 +43,10 @@ origins = (
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://visits.paradigmops.com", "http://localhost:5173"],
+    allow_origins=[
+        "https://visits.paradigmops.com",
+        "http://visits.paradigmops.com",
+        "http://localhost:5173"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

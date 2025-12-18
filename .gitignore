@@ -8,6 +8,10 @@ venv/
 .env
 *.env
 
+
+*.xls
+*.csv
+
 # Alembic caches
 alembic/__pycache__/
 alembic/versions/__pycache__/
@@ -21,7 +25,10 @@ uploads/
 uploads/notes/
 uploads/tmp/
 
-# IDE/editor
+# Common local artifacts
+__pycache__/
+*.pyc
+.DS_Store
 .vscode/
 .idea/
 

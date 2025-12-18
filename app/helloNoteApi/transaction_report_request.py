@@ -11,7 +11,7 @@ TOKEN_FILE = os.path.join(os.path.dirname(__file__), ".hellonote_token.json")
 # Load .env (for webhook)
 env_path = os.path.join(os.path.dirname(__file__), "../../.env")
 load_dotenv(dotenv_path=env_path)
-POWER_AUTOMATE_URL = os.getenv("POWER_AUTOMATE_URL")
+POWER_AUTOMATE_MYSELF = os.getenv("POWER_AUTOMATE_MYSELF")
 
 # Get current script name
 SCRIPT_NAME = os.path.basename(__file__)
@@ -19,8 +19,8 @@ SCRIPT_NAME = os.path.basename(__file__)
 
 def send_webhook(status: str, stage: str, message: str):
     """Send message to Power Automate webhook with file name prefix and status emoji."""
-    if not POWER_AUTOMATE_URL:
-        print("⚠️ No POWER_AUTOMATE_URL found in .env (skipping webhook)")
+    if not POWER_AUTOMATE_MYSELF:
+        print("⚠️ No POWER_AUTOMATE_MYSELF found in .env (skipping webhook)")
         return
 
     emoji = "✅" if status == "success" else "❌"
@@ -33,7 +33,7 @@ def send_webhook(status: str, stage: str, message: str):
     }
 
     try:
-        requests.post(POWER_AUTOMATE_URL, json=payload, timeout=10)
+        requests.post(POWER_AUTOMATE_MYSELF, json=payload, timeout=10)
         print(f"📤 Webhook sent ({status} @ {stage}) — {full_message}")
     except Exception as e:
         print(f"⚠️ Failed to send webhook: {e}")
@@ -71,7 +71,8 @@ def fetch_hellonote_visits_raw(
     isFinalizedDate: bool = False,
     isNoteDate: bool = False,
     isAllStatus: bool = False,
-    isAllStatusWithHold: bool = False
+    isAllStatusWithHold: bool = False,
+    isHold: bool = False
 ) -> dict:
     """
     Fetch BillingTransactions from HelloNote using cached token.
@@ -109,6 +110,7 @@ def fetch_hellonote_visits_raw(
             "isExcludeMedACases": True,
             "isFinalizedDate": isFinalizedDate,
             "isNoteDate": isNoteDate,
+            "isHold": isHold, 
             "caseTypeId": None,
             "sorting": "",
             "skipCount": skipCount,

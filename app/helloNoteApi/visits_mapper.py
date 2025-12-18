@@ -54,7 +54,7 @@ def extract_note_number(note_title: str | None) -> int:
 def map_hellonote_item_to_visit(item: dict) -> dict:
     return {
         "note_id": item.get("noteId"),
-        "patient_id": item.get("patientId"),
+        "patient_id": int(item["patientDisplayId"]),
         "first_name": item.get("patientFirstName"),
         "last_name": item.get("patientLastName"),
         "gender": item.get("gender"),

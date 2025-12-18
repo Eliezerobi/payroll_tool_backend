@@ -49,7 +49,7 @@ def hellonote_login() -> dict:
 
     EMAIL = os.getenv("HELLONOTE_EMAIL")
     PASSWORD = os.getenv("HELLONOTE_PASSWORD")
-    POWER_AUTOMATE_URL = os.getenv("POWER_AUTOMATE_URL")
+    POWER_AUTOMATE_MYSELF = os.getenv("POWER_AUTOMATE_MYSELF")
 
     if not EMAIL or not PASSWORD:
         raise Exception(f"Missing HELLONOTE_EMAIL or HELLONOTE_PASSWORD in {env_path}")
@@ -84,9 +84,9 @@ def hellonote_login() -> dict:
         token_data = save_token_to_cache(result)
 
         # Notify Power Automate (optional)
-        if POWER_AUTOMATE_URL:
+        if POWER_AUTOMATE_MYSELF:
             try:
-                requests.post(POWER_AUTOMATE_URL, json={
+                requests.post(POWER_AUTOMATE_MYSELF, json={
                     "status": "success",
                     "message": f"New HelloNote token acquired for {result['userName']}"
                 }, timeout=10)
@@ -98,9 +98,9 @@ def hellonote_login() -> dict:
     except Exception as e:
         err = str(e)
         print("❌ Login failed:", err)
-        if POWER_AUTOMATE_URL:
+        if POWER_AUTOMATE_MYSELF:
             try:
-                requests.post(POWER_AUTOMATE_URL, json={"status": "error", "message": err}, timeout=10)
+                requests.post(POWER_AUTOMATE_MYSELF, json={"status": "error", "message": err}, timeout=10)
             except Exception:
                 pass
         raise

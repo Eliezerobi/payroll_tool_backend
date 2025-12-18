@@ -23,6 +23,7 @@ def fetch_all_hellonote_visits(
     isFinalizedDate: bool = False,
     isNoteDate: bool = False,
     isAllStatus: bool = False,
+    isHold: bool = False,
     isAllStatusWithHold: bool = False,
 ) -> pd.DataFrame:
     """

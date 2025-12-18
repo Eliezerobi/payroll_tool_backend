@@ -1,23 +1,25 @@
 from fastapi import APIRouter, Depends, File, UploadFile, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy import func
 from pathlib import Path
 from io import BytesIO
 import pandas as pd
 import numpy as np
 import re
 from typing import Any
-from datetime import date
 
 from app.database import get_db
 from app.models.users import User
-from app.models.patients import Patient   # <-- your new model
+from app.models.patients import Patient
 from app.dependencies.auth import get_current_user
 
 router = APIRouter()
 
 ALLOWED_EXTENSIONS = {".xlsx", ".xls", ".csv"}
 MAX_FILE_SIZE_MB = 10
+BATCH_SIZE = 500  # keep < 32767 bind params (asyncpg limit)
 
 
 # ---------- Helpers ----------
@@ -107,6 +109,35 @@ def clean_dataframe_for_db(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def chunked(seq: list[dict[str, Any]], size: int):
+    for i in range(0, len(seq), size):
+        yield seq[i:i + size]
+
+
+def build_upsert_stmt(rows_batch: list[dict[str, Any]]):
+    """
+    Build INSERT ... ON CONFLICT (id) DO UPDATE for a single batch.
+    Updates all columns except id/created_at; updates updated_at if present.
+    """
+    stmt = insert(Patient).values(rows_batch)
+    excluded = stmt.excluded
+
+    update_cols: dict[str, Any] = {}
+    for col in Patient.__table__.columns:
+        if col.name in {"id", "created_at"}:
+            continue
+        update_cols[col.name] = getattr(excluded, col.name)
+
+    colnames = {c.name for c in Patient.__table__.columns}
+    if "updated_at" in colnames:
+        update_cols["updated_at"] = func.now()
+
+    return stmt.on_conflict_do_update(
+        index_elements=[Patient.id],
+        set_=update_cols
+    )
+
+
 # ---------- Route ----------
 @router.post("/patients/upload")
 async def upload_patients_file(
@@ -116,18 +147,17 @@ async def upload_patients_file(
 ):
     """
     Upload and process a patients file (CSV/XLSX).
-    Steps:
-      1. Validate file type and size
-      2. Parse into DataFrame
-      3. Normalize + clean columns
-      4. Insert into DB
+    - Validates file
+    - Parses to DataFrame
+    - Normalizes/cleans columns
+    - UPSERTS into patients (insert new, update existing) in batches
     """
 
     ext = Path(file.filename or "").suffix.lower()
     if ext not in ALLOWED_EXTENSIONS:
         raise HTTPException(
             status_code=400,
-            detail=f"Invalid file type: {ext}. Only {', '.join(ALLOWED_EXTENSIONS)} allowed."
+            detail=f"Invalid file type: {ext}. Only {', '.join(sorted(ALLOWED_EXTENSIONS))} allowed."
         )
 
     contents = await file.read()
@@ -154,20 +184,33 @@ async def upload_patients_file(
     required_cols = {"id", "first_name", "last_name", "date_of_birth"}
     missing = required_cols - set(df.columns)
     if missing:
-        raise HTTPException(status_code=400, detail=f"Missing required columns: {', '.join(sorted(missing))}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Missing required columns: {', '.join(sorted(missing))}"
+        )
 
     # Clean for DB
     df = clean_dataframe_for_db(df)
     rows = df.to_dict(orient="records")
 
-    # Only keep valid model columns
+    # Only keep valid model columns, and drop rows with no id
     valid_fields = {c.name for c in Patient.__table__.columns}
-    cleaned_rows = [{k: v for k, v in row.items() if k in valid_fields} for row in rows]
+    cleaned_rows = [
+        {k: v for k, v in row.items() if k in valid_fields}
+        for row in rows
+        if row.get("id") is not None
+    ]
+
+    if not cleaned_rows:
+        raise HTTPException(status_code=400, detail="No valid rows found (all missing patient id).")
 
     try:
-        patients = [Patient(**row) for row in cleaned_rows]
-        db.add_all(patients)
+        for batch in chunked(cleaned_rows, BATCH_SIZE):
+            stmt = build_upsert_stmt(batch)
+            await db.execute(stmt)
+
         await db.commit()
+
     except IntegrityError as e:
         await db.rollback()
         raise HTTPException(status_code=400, detail=f"Database integrity error: {e}")
@@ -175,4 +218,4 @@ async def upload_patients_file(
         await db.rollback()
         raise HTTPException(status_code=500, detail=f"Unexpected database error: {e}")
 
-    return {"message": f"✅ Uploaded {len(rows)} patients successfully"}
+    return {"message": f"✅ Uploaded {len(cleaned_rows)} patients successfully"}
