@@ -17,6 +17,8 @@ from app.routes import (
     upload_patient_file,       # /api/upload/patients
     export_billable_notes,  # /api/export/billable-notes
     import_hellonoteAPI_visits,  # /api/import-hellonote-visits
+    billingDataQueeries,  # /api/billing/calendar/year-summary
+    note_details,            # /api/visits/note-details
     # visits, invoices, etc. can be added later
 )
 
@@ -76,6 +78,8 @@ protected.include_router(whoami.router, tags=["auth"])
 protected.include_router(history.router, tags=["history"])
 protected.include_router(export_billable_notes.router, tags=["export"])
 protected.include_router(import_hellonoteAPI_visits.router, tags=["import"])
+protected.include_router(billingDataQueeries.router, tags=["billing"])
+protected.include_router(note_details.router, tags=["notes"])
 # protected.include_router(visits.router, tags=["visits"])
 # protected.include_router(invoices.router, tags=["invoices"])
 

@@ -17,9 +17,9 @@ class Visit(Base):
     note_number: Mapped[int] = mapped_column(Integer)
     case_description: Mapped[Optional[str]] = mapped_column(String(255))
     case_date: Mapped[Optional[Date]] = mapped_column(Date)
-    primary_ins_id: Mapped[Optional[str]] = mapped_column(String(50))
+    primary_ins_id: Mapped[Optional[str]] = mapped_column(String(150))
     primary_insurance: Mapped[Optional[str]] = mapped_column(String(100))
-    secondary_ins_id: Mapped[Optional[str]] = mapped_column(String(50))
+    secondary_ins_id: Mapped[Optional[str]] = mapped_column(String(255))
     secondary_insurance: Mapped[Optional[str]] = mapped_column(String(100))
     note_date: Mapped[Optional[Date]] = mapped_column(Date)
     referring_provider: Mapped[Optional[str]] = mapped_column(String(150))
@@ -28,11 +28,11 @@ class Visit(Base):
     finalized_date: Mapped[Optional[Date]] = mapped_column(Date)
     pos: Mapped[Optional[str]] = mapped_column(String(20))
     visit_type: Mapped[Optional[str]] = mapped_column(String(100))
-    attendance: Mapped[Optional[str]] = mapped_column(String(50))
+    attendance: Mapped[Optional[str]] = mapped_column(String(255))
     comments: Mapped[Optional[str]] = mapped_column(Text)
     supervising_therapist: Mapped[Optional[str]] = mapped_column(String(150))
     visiting_therapist: Mapped[Optional[str]] = mapped_column(String(150))
-    cpt_code: Mapped[Optional[str]] = mapped_column(String(50))
+    cpt_code: Mapped[Optional[str]] = mapped_column(String(150))
     total_units: Mapped[Optional[int]] = mapped_column(Integer)
     date_billed: Mapped[Optional[Date]] = mapped_column(Date)
     billed_comment: Mapped[Optional[str]] = mapped_column(Text)
@@ -47,8 +47,8 @@ class Visit(Base):
     hold: Mapped[bool] = mapped_column(Boolean, default=False)
     billed: Mapped[bool] = mapped_column(Boolean, default=False)
     paid: Mapped[bool] = mapped_column(Boolean, default=False)
-    auth_number: Mapped[Optional[str]] = mapped_column(String(50))
-    medical_record_no: Mapped[Optional[str]] = mapped_column(String(50))
+    auth_number: Mapped[Optional[str]] = mapped_column(String(255))
+    medical_record_no: Mapped[Optional[str]] = mapped_column(String(255))
     medical_diagnosis: Mapped[Optional[str]] = mapped_column(Text)
     rendering_provider_npi: Mapped[Optional[str]] = mapped_column(String(20))
     gender: Mapped[Optional[str]] = mapped_column(String(20))
@@ -65,4 +65,26 @@ class Visit(Base):
         BigInteger,
         ForeignKey("users.id", ondelete="SET NULL"),  # 👈 enforce FK to users table
         nullable=True
+    )
+
+    note_group_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger,
+        ForeignKey("billing_status.id", ondelete="SET NULL"),
+        index=True,
+        nullable=True,
+        comment="FK to billing_status.id; groups original note and addenda under one billable entity"
+    )
+
+    note_version: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        nullable=True,
+        comment="Version number within note_group_id (1 = original, 2+ = addenda)"
+    )
+
+    billing_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger,
+        ForeignKey("billing_status.id", ondelete="SET NULL"),
+        index=True,
+        nullable=True,
+        comment="Links visit to billing_status row used for billing/invoicing"
     )

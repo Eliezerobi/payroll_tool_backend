@@ -33,7 +33,7 @@ def send_webhook(status: str, stage: str, message: str):
     }
 
     try:
-        requests.post(POWER_AUTOMATE_MYSELF, json=payload, timeout=10)
+        requests.post(POWER_AUTOMATE_MYSELF, json=payload, timeout=600)
         print(f"📤 Webhook sent ({status} @ {stage}) — {full_message}")
     except Exception as e:
         print(f"⚠️ Failed to send webhook: {e}")
@@ -67,7 +67,7 @@ def fetch_hellonote_visits_raw(
     dateFrom: str,
     dateTo: str,
     skipCount: int = 0,
-    amount: int = 10,
+    amount: int = 500,
     isFinalizedDate: bool = False,
     isNoteDate: bool = False,
     isAllStatus: bool = False,
@@ -123,7 +123,7 @@ def fetch_hellonote_visits_raw(
             f"noteDate={isNoteDate}, allStatus={isAllStatus}, withHold={isAllStatusWithHold})..."
         )
 
-        response = requests.post(url, json=payload, headers=headers, timeout=30)
+        response = requests.post(url, json=payload, headers=headers, timeout=600)
 
         if response.status_code == 401:
             raise PermissionError("Unauthorized: Token is expired or invalid.")

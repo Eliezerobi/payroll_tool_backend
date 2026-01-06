@@ -55,9 +55,9 @@ def fetch_all_hellonote_visits(
         print(f"✅ Found {total_count} total records.")
         send_webhook("success", stage, f"Found {total_count} total records to download.")
 
-        # 2️⃣ Loop through in chunks of 25
+        # 2️⃣ Loop through in chunks of 500
         master_list = []
-        per_page = 25
+        per_page = 500
         pages = math.ceil(total_count / per_page)
 
         for page in range(pages):

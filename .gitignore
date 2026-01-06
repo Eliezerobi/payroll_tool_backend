@@ -34,3 +34,38 @@ __pycache__/
 
 # Logs
 *.log
+
+# SQLite / local DB files (in case you ever use them for testing)
+*.sqlite
+*.sqlite3
+*.db
+
+# SQLAlchemy / Alembic leftovers
+alembic/versions/*.pyc
+
+
+*.xlsx
+*.xlsm
+*.ods
+
+# Pandas / Excel temp files
+~$*.xlsx
+
+
+# Python build artifacts
+build/
+dist/
+*.egg-info/
+
+# pytest / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+
+.env.*
+*.secrets
+*.secret
+
+*.swp
+*.swo
