@@ -24,10 +24,17 @@ class Settings(BaseSettings):
 
     
     MONDAY_API_KEY: str | None = None
+    MONDAY_BOARD_ID_STRIPE: Optional[str] = None  # <-- add this if you want
 
+    # Stripe (ADD THESE)
+    STRIPE_SECRET_KEY: Optional[str] = None
+    STRIPE_WEBHOOK_SECRET: Optional[str] = None
+    STRIPE_SUCCESS_URL: Optional[str] = None  # must include {LEAD_ID}
+    STRIPE_CANCEL_URL: Optional[str] = None
 
     class Config:
         env_file = ".env"
+        extra = "ignore"  # IMPORTANT: prevents crash if you add unrelated env vars
 
 @lru_cache
 def get_settings() -> Settings:

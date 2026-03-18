@@ -30,6 +30,7 @@ async def get_payroll_history(
         stmt = stmt.where(
             or_(
                 cast(Visit.patient_id, String).ilike(like_pattern),
+                cast(Visit.note_id, String).ilike(like_pattern),
                 Visit.first_name.ilike(like_pattern),
                 Visit.last_name.ilike(like_pattern)
             )
@@ -41,6 +42,7 @@ async def get_payroll_history(
     return [
         {
             "visit_uid": v.visit_uid,
+            "note_id": v.note_id,
             "id": v.id,
             "patient_id": v.patient_id,
             "first_name": v.first_name,

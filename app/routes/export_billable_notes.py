@@ -4,8 +4,8 @@ from collections import defaultdict
 from io import BytesIO
 from datetime import date
 from typing import Any
-from sqlalchemy import or_, text
 
+from sqlalchemy import or_, text, and_, not_
 import pandas as pd
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
@@ -22,22 +22,27 @@ router = APIRouter()
 
 # ------------------ TITLES TO REMOVE ------------------ #
 titles_to_remove = [
-    "CF-SLP","M.S., CCC-SLP", "PTA", "OTA", "CFY",  "DPT", "CCC-SLP",
+    "CF-SLP", "M.S., CCC-SLP", "PTA", "OTA", "CFY", "DPT", "CCC-SLP",
     "PTA ATC CAFS", "Speech Language Pathologist", "CFY/SLP", "OTR/L",
     "Occupational Therapist", "Doctor of Physical Therapy",
-    "PTA, ATC, CAFS", "Slps", 
+    "PTA, ATC, CAFS", "Slps",
     "Physical Therapist Assistant",
     "Cavero Michelle Ph.D. CCC-SLP TSSLD",
-    "Nicole CLINICAL DIRECTOR OF SPEECH-LANGUAGE PATHOLOGY Yehezel","PT", "OT", "SLP"
+    "Nicole CLINICAL DIRECTOR OF SPEECH-LANGUAGE PATHOLOGY Yehezel", "PT", "OT", "SLP"
 ]
 
-#------------------ MEDICARE PRIMARY NAMES ------------------ #
+# ------------------ MEDICARE PRIMARY NAMES ------------------ #
 MEDICARE_PRIMARY_NAMES = {
     "new york empire medicare",
     "new york medicare ghi",
     "new york medicare upstate"
 }
 
+# ------------------ DISALLOWED DIAGNOSES ------------------ #
+DISALLOWED_DIAGNOSES = [
+    "G35",
+    "E08.37",
+]
 
 # ------------------ NAME HELPERS ------------------ #
 def _strip_titles(name: str | None) -> str | None:
@@ -51,35 +56,21 @@ def _strip_titles(name: str | None) -> str | None:
 
 
 def split_provider_and_supervisor(raw: str | None) -> tuple[str | None, str | None]:
-    """
-    primary = visiting therapist (outside parentheses)
-    supervisor = name inside parentheses
-
-    Examples:
-      'Prieto, Napoleon PTA (cosigned by Cruz, Van Gabriel PT)'
-        -> ('Prieto, Napoleon', 'Cruz, Van Gabriel')
-
-      'John Doe PT (Jane Smith DPT)'
-        -> ('John Doe', 'Jane Smith')
-    """
     if not raw or not isinstance(raw, str):
         return None, None
 
     raw = raw.strip()
 
-    # Supervisor: inside parentheses
     m = re.search(r"\((.*?)\)", raw)
     supervisor_raw = m.group(1).strip() if m else None
 
     if supervisor_raw:
-        # Remove "cosigned by"/"co-signed by" prefix if present
         supervisor_raw = re.sub(
             r"(?i)^\s*co-?signed by\s+",
             "",
             supervisor_raw
         ).strip()
 
-    # Provider: remove parentheses section
     provider_raw = re.sub(r"\(.*?\)", "", raw).strip()
 
     provider = _strip_titles(provider_raw)
@@ -90,25 +81,17 @@ def split_provider_and_supervisor(raw: str | None) -> tuple[str | None, str | No
 
 # ------------------ NAME SPLITTER ------------------ #
 def split_first_last(name: str | None) -> tuple[str | None, str | None]:
-    """
-    Handles both:
-      'Prieto, Napoleon' -> ('Napoleon', 'Prieto')
-      'John Doe'         -> ('John', 'Doe')
-      'John'             -> ('John', None)
-    """
     if not name or not isinstance(name, str):
         return None, None
 
     name = name.strip()
 
-    # Format: "Last, First ..."
     if "," in name:
         last_part, first_part = [p.strip() for p in name.split(",", 1)]
         first_name = first_part if first_part else None
         last_name = last_part if last_part else None
         return first_name or None, last_name or None
 
-    # Format: "First Last ..."
     parts = name.split()
     if len(parts) == 1:
         return parts[0], None
@@ -139,19 +122,16 @@ def parse_cpt_string(cpt_str: str):
             modifiers = modifiers[:i]
             break
 
-    # Flags (presence in modifiers list)
     has_59 = "59" in modifiers
     has_kx = "KX" in modifiers
     has_cq = "CQ" in modifiers
     has_co = "CO" in modifiers
 
-    # Assistant modifier should be a single value: CQ or CO (never both)
     assistant_modifier = None
     if has_cq and not has_co:
         assistant_modifier = "CQ"
     elif has_co and not has_cq:
         assistant_modifier = "CO"
-    # if both present, leave None so it can be reviewed/handled elsewhere
 
     cpt_matches = re.findall(r"(\d{5})\((\d+)\)", cpt_part)
     cpt_units = defaultdict(int)
@@ -172,13 +152,12 @@ def parse_cpt_string(cpt_str: str):
     return rows
 
 
-
 # ------------------ HELPERS ------------------ #
 def nth_code(val: str | None, n: int) -> str | None:
     if not val or not isinstance(val, str):
         return None
     parts = [p.strip() for p in val.split(",") if p.strip()]
-    return parts[n-1] if len(parts) >= n else None
+    return parts[n - 1] if len(parts) >= n else None
 
 
 def split_referring_phys(name: str | None) -> tuple[str | None, str | None]:
@@ -187,12 +166,10 @@ def split_referring_phys(name: str | None) -> tuple[str | None, str | None]:
 
     name = name.strip()
 
-    # Rule 1: Double space splits first/last
     if "  " in name:
         first, last = name.split("  ", 1)
         return first.strip(), last.strip()
 
-    # Rule 2: Otherwise first word = first name, rest = last name
     parts = name.split()
 
     if len(parts) == 1:
@@ -202,6 +179,66 @@ def split_referring_phys(name: str | None) -> tuple[str | None, str | None]:
     last_name = " ".join(parts[1:])
 
     return first_name, last_name
+
+
+def diagnosis_has_blocked_code(value: str | None) -> bool:
+    if not value or not isinstance(value, str):
+        return False
+
+    for code in DISALLOWED_DIAGNOSES:
+        esc = re.escape(code.strip())
+        pattern = rf"(^|[^A-Za-z0-9\.]){esc}($|[^A-Za-z0-9\.])"
+        if re.search(pattern, value, flags=re.IGNORECASE):
+            return True
+
+    return False
+
+
+def is_non_empty_string(value: Any) -> bool:
+    return isinstance(value, str) and value.strip() != ""
+
+
+def passes_abc(visit: Visit) -> bool:
+    primary_ok = (
+        is_non_empty_string(getattr(visit, "primary_insurance", None))
+        and "|" in visit.primary_insurance
+    )
+
+    secondary_value = getattr(visit, "secondary_insurance", None)
+    secondary_ok = (
+        secondary_value is None
+        or (isinstance(secondary_value, str) and secondary_value.strip() == "")
+        or (isinstance(secondary_value, str) and "|" in secondary_value)
+    )
+
+    diagnosis_val = getattr(visit, "diagnosis", None)
+    medical_diagnosis_val = getattr(visit, "medical_diagnosis", None)
+
+    diagnosis_ok = (
+        is_non_empty_string(diagnosis_val)
+        and is_non_empty_string(medical_diagnosis_val)
+        and not diagnosis_has_blocked_code(diagnosis_val)
+    )
+
+    return primary_ok and secondary_ok and diagnosis_ok
+
+
+def is_ready_to_bill(visit: Visit, patient: Patient | None) -> tuple[bool, bool, bool]:
+    """
+    returns:
+      (ready_to_bill, passed_abc, met_deductable)
+    """
+    passed_abc = passes_abc(visit)
+    met_deductable = bool(getattr(patient, "met_deductible", False))
+
+    if not passed_abc:
+        return False, passed_abc, met_deductable
+
+    note_dt = getattr(visit, "note_date", None)
+    note_year = note_dt.year if note_dt else None
+
+    ready = (note_year is not None and note_year < 2026) or met_deductable
+    return ready, passed_abc, met_deductable
 
 
 # ------------------ COLUMN MAPPING ------------------ #
@@ -244,9 +281,6 @@ mapping_assumed = {
     "Treatment DX 1": "diagnosis",
     "Treatment DX 2": "diagnosis",
 
-    # Provider / Supervisor: both sourced from visiting_therapist,
-    # we split them in code.
-
     "PROVIDER FIRSTNAME": "visiting_therapist",
     "PROVIDER LASTNAME": "visiting_therapist",
 
@@ -272,7 +306,6 @@ async def download_billable_notes(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-
     stmt = (
         select(Visit, Patient)
         .join(Patient, Patient.id == Visit.patient_id)
@@ -283,10 +316,9 @@ async def download_billable_notes(
     if end_date:
         stmt = stmt.where(Visit.note_date <= end_date)
 
-    # Exclude HOLD: keep False / NULL, drop True
     stmt = stmt.where(Visit.hold.isnot(True))
+    stmt = stmt.where(or_(Visit.billed.is_(False), Visit.billed.is_(None)))
 
-    # Exclude certain insurance
     stmt = stmt.where(
         ~or_(
             Visit.primary_insurance.ilike("americare"),
@@ -299,8 +331,6 @@ async def download_billable_notes(
     result = await db.execute(stmt)
     rows = result.all()
 
-    # ---------- LOAD COVERAGE MAP (patient_coverages_flat) ---------- #
-    # We match by medical_record_no -> medical_record_id
     coverage_result = await db.execute(text("""
         SELECT
             medical_record_id,
@@ -321,41 +351,42 @@ async def download_billable_notes(
     billable_rows = []
 
     for visit, patient in rows:
+        ready_to_bill, passed_abc, met_deductable = is_ready_to_bill(visit, patient)
+
+        # only export ready_to_bill
+        if not ready_to_bill:
+            continue
+
         parsed_cpts = parse_cpt_string(visit.cpt_code)
 
-        # Find coverage row by patient_id -> medical_record_id
+        # if no CPTs parsed, skip
+        if not parsed_cpts:
+            continue
+
         coverage = None
         if visit.patient_id is not None:
             coverage = coverage_by_medrec.get(str(visit.patient_id))
 
         for cpt in parsed_cpts:
-                    # ---------- RULE: If there is a supervisor, force assistant modifier based on specialty ----------
-            _provider_full, _supervisor_full = split_provider_and_supervisor(getattr(visit, "visiting_therapist", None))
+            _provider_full, _supervisor_full = split_provider_and_supervisor(
+                getattr(visit, "visiting_therapist", None)
+            )
 
             if _supervisor_full:
                 specialty = (cpt.get("modifier_specialty") or "").strip().upper()
 
-                # GO (OT) => CO
                 if specialty == "GO":
                     cpt["assistant_modifier"] = "CO"
-
-                # GP (PT) => CQ
                 elif specialty == "GP":
                     cpt["assistant_modifier"] = "CQ"
-
-
-
 
             record = {}
 
             for excel_col, mapping in mapping_assumed.items():
-
-                # ----- Patient lookups ----- #
                 if isinstance(mapping, str) and mapping.startswith("lookup:patients."):
                     field = mapping.split(".")[1]
                     record[excel_col] = getattr(patient, field, None)
 
-                # ----- Provider / Supervisor (all variants) ----- #
                 elif mapping == "visiting_therapist" and (
                     excel_col.startswith("PROVIDER") or excel_col.startswith("SUPERVISOR")
                 ):
@@ -374,7 +405,6 @@ async def download_billable_notes(
                     elif excel_col == "SUPERVISOR LASTNAME":
                         record[excel_col] = sup_last
 
-                # ----- Diagnosis mapping ----- #
                 elif excel_col == "MEDICAL DX1":
                     record[excel_col] = nth_code(visit.medical_diagnosis, 1)
 
@@ -387,7 +417,6 @@ async def download_billable_notes(
                 elif excel_col == "Treatment DX 2":
                     record[excel_col] = nth_code(visit.diagnosis, 2)
 
-                # ----- Referring provider fields (trim name) ----- #
                 elif mapping == "referring_provider":
                     raw = getattr(visit, "referring_provider")
                     raw = raw.strip() if isinstance(raw, str) else raw
@@ -401,46 +430,36 @@ async def download_billable_notes(
                     else:
                         record[excel_col] = None
 
-                # ----- CPT row fields ----- #
                 elif isinstance(mapping, str) and mapping in cpt:
                     record[excel_col] = cpt[mapping]
 
-                # ----- Direct visit attributes ----- #
                 elif isinstance(mapping, str) and hasattr(visit, mapping):
                     value = getattr(visit, mapping)
 
-                    # Rule: if auth number is "x" or "eval", set to None
                     if excel_col == "AUTHORIZATION REFERENCE NUMBER":
                         if isinstance(value, str) and value.strip().lower() in {"x", "eval"}:
                             value = None
 
                     record[excel_col] = value
 
-                # ----- Static / default mapping values ----- #
                 else:
                     record[excel_col] = mapping
 
-            # ---------- Correct Primary / Secondary Payer ---------- #
             correct_primary = None
             correct_secondary = None
 
-            # 1️⃣ Base logic from patient_coverages_flat
             if coverage:
                 med_payer = (coverage.get("medicare_payer") or "").strip()
                 med_type = (coverage.get("medicare_policy_type") or "").strip()
                 medicaid_payer = (coverage.get("medicaid_payer") or "").strip()
                 medicaid_type = (coverage.get("medicaid_policy_type") or "").strip()
 
-                # Primary (from Medicare fields)
                 if med_payer and med_payer.lower() != "medicare":
                     correct_primary = f"{med_payer} | {med_type}" if med_type else med_payer
 
-                # Secondary (from Medicaid fields)
                 if medicaid_payer and medicaid_payer.lower() != "medicaid":
                     correct_secondary = f"{medicaid_payer} | {medicaid_type}" if medicaid_type else medicaid_payer
 
-
-            # 2️⃣ OVERRIDE: Specific Medicare plan names on the VISIT always win
             primary_ins = (getattr(visit, "primary_insurance", None) or "").strip()
 
             if primary_ins and primary_ins.lower() in {
@@ -450,9 +469,10 @@ async def download_billable_notes(
             }:
                 correct_primary = f"{primary_ins} | Medicare"
 
-
             record["Correct Primary Payer"] = correct_primary
             record["Correct Secondary Payer"] = correct_secondary
+            record["Passed A/B/C"] = "Yes" if passed_abc else "No"
+            record["Met Deductable"] = "Yes" if met_deductable else "No"
 
             billable_rows.append(record)
 

@@ -76,12 +76,14 @@ class BillingStatus(Base):
     )
 
     # Invoice / batch linkage (optional now; add FK once invoices table exists)
-    invoice_id: Mapped[Optional[int]] = mapped_column(
-        BigInteger,
+    # Change this block in your model file:
+    invoice_id: Mapped[Optional[str]] = mapped_column(
+        String(255),  # Changed from BigInteger to String
         nullable=True,
         index=True,
         comment="Optional link to invoice/batch id if you implement invoices"
     )
+
 
     review_needed: Mapped[bool] = mapped_column(
         Boolean,

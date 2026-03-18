@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, BigInteger, Date, DateTime, Text, func
+from sqlalchemy import Column, String, BigInteger, Date, DateTime, Text, Boolean, func
 from app.database import Base
 
 class Patient(Base):
@@ -26,6 +26,7 @@ class Patient(Base):
     comment = Column(Text)
     primary_care_physician = Column(String(150))
     date_added = Column(Date)
+    met_deductible = Column(Boolean, nullable=False, server_default="false")
 
     created_at = Column(DateTime, server_default=func.now(), nullable=False)
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)

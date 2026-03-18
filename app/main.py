@@ -19,8 +19,12 @@ from app.routes import (
     import_hellonoteAPI_visits,  # /api/import-hellonote-visits
     billingDataQueeries,  # /api/billing/calendar/year-summary
     note_details,            # /api/visits/note-details
+    billing_import_manual,  # /api/billing/import-billed-excel
+    deductibleFile,        # /api/patients/import-deductible-flags
     # visits, invoices, etc. can be added later
 )
+
+from app.routes import intake_public, stripe_webhook_public, stripeCharge
 
 # ---------------------------------------------------------------------
 # App initialization
@@ -46,9 +50,12 @@ origins = (
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "https://visits.paradigmops.com",
-        "http://visits.paradigmops.com",
-        "http://localhost:5173"],
+    "https://visits.paradigmops.com",
+    "http://visits.paradigmops.com",
+    "http://localhost:5173",
+    "https://paradigmrehab.org",
+    "https://www.paradigmrehab.org",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -60,6 +67,10 @@ app.add_middleware(
 # ---------------------------------------------------------------------
 app.include_router(auth_routes.router, prefix="/api", tags=["auth"])
 app.include_router(otp_routes.router, prefix="/api", tags=["otp"])
+
+app.include_router(intake_public.router, prefix="/api", tags=["intake"])
+app.include_router(stripe_webhook_public.router, prefix="/api", tags=["stripe"])
+app.include_router(stripeCharge.router, prefix="/api", tags=["stripe"])
 
 @app.get("/healthz", tags=["health"])
 async def healthz():
@@ -80,6 +91,9 @@ protected.include_router(export_billable_notes.router, tags=["export"])
 protected.include_router(import_hellonoteAPI_visits.router, tags=["import"])
 protected.include_router(billingDataQueeries.router, tags=["billing"])
 protected.include_router(note_details.router, tags=["notes"])
+protected.include_router(billing_import_manual.router, tags=["billing"])
+protected.include_router(deductibleFile.router, tags=["patients"])
+
 # protected.include_router(visits.router, tags=["visits"])
 # protected.include_router(invoices.router, tags=["invoices"])
 
