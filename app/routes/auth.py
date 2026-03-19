@@ -1,13 +1,15 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
-from datetime import timedelta
+from sqlalchemy import select
+from datetime import datetime, timedelta
 from app.database import get_db
 from app.schemas.token import Token
-from app.schemas.user import UserCreate, UserRead
+from app.schemas.user import UserCreate, UserRead, UserRegister
 from app.crud.users import get_user_by_username, authenticate_user, create_user
 from app.auth_utils import create_access_token, ACCESS_TOKEN_EXPIRE_MINUTES
 from app.dependencies.auth import get_current_user
+from app.models.registration_token import RegistrationToken
 
 router = APIRouter()
 
@@ -29,9 +31,23 @@ async def read_users_me(current_user: UserRead = Depends(get_current_user)):
     return current_user
 
 @router.post("/register", response_model=UserRead)
-async def register(user_in: UserCreate, db: AsyncSession = Depends(get_db)):
+async def register(user_in: UserRegister, db: AsyncSession = Depends(get_db)):
     existing = await get_user_by_username(db, user_in.username)
     if existing:
         raise HTTPException(status_code=400, detail="Username already exists")
-    new_user = await create_user(db, user_in)
+
+    token_result = await db.execute(
+        select(RegistrationToken).where(RegistrationToken.token == user_in.otp)
+    )
+    registration_token = token_result.scalar_one_or_none()
+    if not registration_token:
+        raise HTTPException(status_code=400, detail="Invalid OTP")
+    if registration_token.used:
+        raise HTTPException(status_code=400, detail="OTP already used")
+    if registration_token.expires_at and registration_token.expires_at < datetime.utcnow():
+        raise HTTPException(status_code=400, detail="OTP expired")
+
+    registration_token.used = True
+    user_create = UserCreate(username=user_in.username, password=user_in.password)
+    new_user = await create_user(db, user_create)
     return new_user

@@ -12,6 +12,8 @@ from app.crud.billingQueries.unpreparedVisits import (
     count_visits_by_month_three_buckets,
     count_visits_by_day_three_buckets,
     fetch_visits_for_day_three_buckets,
+    fetch_all_unprepared_visits,
+    ISSUE_LABELS,
 )
 
 
@@ -33,6 +35,49 @@ from app.crud.billingQueries.sentToBillingVisits import (
 
 
 router = APIRouter()
+
+@router.get("/billing/unprepared")
+async def billing_unprepared_visits(
+    start_date: Date | None = Query(None, description="YYYY-MM-DD (optional)"),
+    end_date: Date | None = Query(None, description="YYYY-MM-DD (optional)"),
+    limit: int = Query(500, ge=1, le=5000),
+    offset: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Dedicated endpoint for Unprepared tab:
+    returns unprepared visits independent of a specific calendar day.
+    """
+    if start_date and end_date and start_date > end_date:
+        raise HTTPException(status_code=400, detail="start_date cannot be after end_date")
+
+    try:
+        visits, total = await fetch_all_unprepared_visits(
+            db=db,
+            start_date=start_date,
+            end_date=end_date,
+            limit=limit,
+            offset=offset,
+        )
+
+        return {
+            "filters": {
+                "start_date": start_date,
+                "end_date": end_date,
+            },
+            "issue_labels": ISSUE_LABELS,
+            "total": total,
+            "count": len(visits),
+            "limit": limit,
+            "offset": offset,
+            "visits": visits,
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to fetch unprepared visits: {e}",
+        )
 
 
 @router.get("/billing/calendar/year-summary")

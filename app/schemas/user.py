@@ -4,6 +4,9 @@ class UserCreate(BaseModel):
     username: str
     password: str
 
+class UserRegister(UserCreate):
+    otp: str
+
 class UserRead(BaseModel):
     id: int
     username: str
