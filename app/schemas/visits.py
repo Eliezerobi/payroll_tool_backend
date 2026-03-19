@@ -81,3 +81,23 @@ class VisitDetailsOut(BaseModel):
     note_version: Optional[int] = None
 
     model_config = {"from_attributes": True}
+
+
+class VisitDetailsUpdate(BaseModel):
+    primary_ins_id: Optional[str] = None
+    primary_insurance: Optional[str] = None
+    secondary_ins_id: Optional[str] = None
+    secondary_insurance: Optional[str] = None
+    referring_provider: Optional[str] = None
+    ref_provider_npi: Optional[str] = None
+    diagnosis: Optional[str] = None
+    visiting_therapist: Optional[str] = None
+    cpt_code: Optional[str] = None
+    auth_number: Optional[str] = None
+    medical_diagnosis: Optional[str] = None
+    rendering_provider_npi: Optional[str] = None
+
+
+class VisitBulkUpdateIn(BaseModel):
+    note_ids: list[int]
+    updates: VisitDetailsUpdate
