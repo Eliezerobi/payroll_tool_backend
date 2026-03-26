@@ -6,3 +6,4 @@ from .patient_coverages import PatientCoverage
 from .self_pay_customer import SelfPayCustomer
 from .self_pay_charges import SelfPayCharge
 from .billing_status import BillingStatus
+from .millin_invoices import MillinInvoice

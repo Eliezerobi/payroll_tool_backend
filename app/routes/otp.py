@@ -21,7 +21,7 @@ async def generate_otp(
     otp = secrets.token_urlsafe(8)
     token = RegistrationToken(
         token=otp,
-        expires_at=datetime.utcnow() + timedelta(minutes=30),
+        expires_at=datetime.utcnow() + timedelta(hours=24),
     )
     db.add(token)
     await db.commit()

@@ -1,33 +1,20 @@
 import asyncio
-import os
 from sqlalchemy import text
 from app.database import SessionLocal
 from app.mondayAPI.create_monday_item import create_monday_item
-from dotenv import load_dotenv
-
-# -------------------------------------------------------------
-# Load environment variables (for CHHA filtering)
-# -------------------------------------------------------------
-load_dotenv()
-
-CHHA_INS = [
-    x.strip().lower()
-    for x in os.getenv("CHHA_INSURANCES", "").split(",")
-    if x.strip()
-]
 
 # -------------------------------------------------------------
 # SQL templates
 # -------------------------------------------------------------
 SQL_WITH_CHHA_FILTER = """
 WITH today AS (
-  SELECT (now() AT TIME ZONE 'America/New_York')::date AS today
+  SELECT (now() AT TIME ZONE 'America/New_York')::date  AS today
 )
 SELECT *
 FROM {table} r, today t
 WHERE r.created_at::date = t.today
   AND COALESCE(r.uploaded_to_monday, false) = false
-  AND lower(coalesce(r.primary_insurance, '')) != ALL(:chha)
+  AND trim(coalesce(r.primary_insurance, '')) NOT ILIKE '%CHHA'
 ORDER BY r.created_at DESC
 """
 
@@ -72,10 +59,9 @@ async def push_reports_to_monday():
             # Choose correct SQL depending on exclude_chha flag
             if exclude_chha:
                 sql_template = SQL_WITH_CHHA_FILTER
-                params = {"chha": CHHA_INS}
             else:
                 sql_template = SQL_NO_CHHA_FILTER
-                params = {}
+            params = {}
 
             sql = text(sql_template.replace("{table}", table))
 
@@ -106,6 +92,7 @@ async def push_reports_to_monday():
                         last_name=r.get("last_name"),
                         cpt_code=r.get("cpt_code"),
                         note_date=str(r.get("note_date") or ""),
+                        explanation=r.get("explanation"),
                     )
 
                     # Mark as uploaded

@@ -1,5 +1,6 @@
 import re
 import json
+import logging
 from collections import defaultdict
 from io import BytesIO
 from datetime import date
@@ -19,6 +20,9 @@ from app.dependencies.auth import get_current_user
 from app.models.users import User
 
 router = APIRouter()
+
+# Set up logging
+logger = logging.getLogger(__name__)
 
 # ------------------ TITLES TO REMOVE ------------------ #
 titles_to_remove = [
@@ -301,6 +305,7 @@ mapping_assumed = {
 # ------------------ ROUTE ------------------ #
 @router.get("/billable-notes")
 async def download_billable_notes(
+    primary_insurance: str | None = None,
     start_date: date | None = None,
     end_date: date | None = None,
     db: AsyncSession = Depends(get_db),
@@ -310,6 +315,9 @@ async def download_billable_notes(
         select(Visit, Patient)
         .join(Patient, Patient.id == Visit.patient_id)
     )
+
+    if primary_insurance:
+        stmt = stmt.where(Visit.primary_insurance.ilike(f"%{primary_insurance}%"))
 
     if start_date:
         stmt = stmt.where(Visit.note_date >= start_date)
@@ -488,3 +496,237 @@ async def download_billable_notes(
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": "attachment; filename=billable_notes.xlsx"}
     )
+
+@router.get("/timely-filling-notes")
+async def download_timely_filling_notes(
+    primary_insurance: str | None = None,
+    start_date: date | None = None,
+    end_date: date | None = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    # Debug logging
+    logger.warning(f"DEBUG: primary_insurance param: {repr(primary_insurance)}")
+    logger.warning(f"DEBUG: start_date: {start_date}, end_date: {end_date}")
+
+    stmt = (
+        select(Visit, Patient)
+        .join(Patient, Patient.id == Visit.patient_id)
+    )
+
+    if primary_insurance and primary_insurance.strip():
+        logger.warning(f"DEBUG: Applying primary_insurance filter: {repr(primary_insurance)}")
+        stmt = stmt.where(Visit.primary_insurance.ilike(f"%{primary_insurance}%"))
+    else:
+        logger.warning("DEBUG: No primary_insurance filter applied")
+
+    if start_date:
+        stmt = stmt.where(Visit.note_date >= start_date)
+    if end_date:
+        stmt = stmt.where(Visit.note_date <= end_date)
+
+    stmt = stmt.where(Visit.hold.isnot(True))
+    stmt = stmt.where(or_(Visit.billed.is_(False), Visit.billed.is_(None)))
+
+    stmt = stmt.where(
+        ~or_(
+            Visit.primary_insurance.ilike("americare"),
+            Visit.primary_insurance.ilike("royal care"),
+            Visit.primary_insurance.ilike("extendedcare"),
+            Visit.primary_insurance.ilike("able health"),
+        )
+    )
+
+    result = await db.execute(stmt)
+    rows = result.all()
+
+    coverage_result = await db.execute(text("""
+        SELECT
+            medical_record_id,
+            medicare_payer,
+            medicare_policy_type,
+            medicare_policy_number,
+            medicaid_payer,
+            medicaid_policy_type,
+            medicaid_policy_number
+        FROM patient_coverages_flat
+    """))
+    coverage_rows = coverage_result.mappings().all()
+
+    coverage_by_medrec = {
+        row["medical_record_id"]: row for row in coverage_rows
+    }
+
+    billable_rows = []
+
+    for visit, patient in rows:
+        ready_to_bill, passed_abc, met_deductable = is_ready_to_bill(visit, patient)
+
+        # timely filling export should ignore deductible and only require A/B/C
+        if not passed_abc:
+            continue
+        
+        parsed_cpts = parse_cpt_string(visit.cpt_code)
+
+        # if no CPTs parsed, skip
+        if not parsed_cpts:
+            continue
+
+        coverage = None
+        if visit.patient_id is not None:
+            coverage = coverage_by_medrec.get(str(visit.patient_id))
+
+        for cpt in parsed_cpts:
+            _provider_full, _supervisor_full = split_provider_and_supervisor(
+                getattr(visit, "visiting_therapist", None)
+            )
+
+            if _supervisor_full:
+                specialty = (cpt.get("modifier_specialty") or "").strip().upper()
+
+                if specialty == "GO":
+                    cpt["assistant_modifier"] = "CO"
+                elif specialty == "GP":
+                    cpt["assistant_modifier"] = "CQ"
+
+            record = {}
+
+            for excel_col, mapping in mapping_assumed.items():
+                if isinstance(mapping, str) and mapping.startswith("lookup:patients."):
+                    field = mapping.split(".")[1]
+                    record[excel_col] = getattr(patient, field, None)
+
+                elif mapping == "visiting_therapist" and (
+                    excel_col.startswith("PROVIDER") or excel_col.startswith("SUPERVISOR")
+                ):
+                    raw = getattr(visit, "visiting_therapist")
+                    provider_full, supervisor_full = split_provider_and_supervisor(raw)
+
+                    prov_first, prov_last = split_first_last(provider_full)
+                    sup_first, sup_last = split_first_last(supervisor_full)
+
+                    if excel_col == "PROVIDER FIRSTNAME":
+                        record[excel_col] = prov_first
+                    elif excel_col == "PROVIDER LASTNAME":
+                        record[excel_col] = prov_last
+                    elif excel_col == "SUPERVISOR FIRSTNAME":
+                        record[excel_col] = sup_first
+                    elif excel_col == "SUPERVISOR LASTNAME":
+                        record[excel_col] = sup_last
+
+                elif excel_col == "MEDICAL DX1":
+                    record[excel_col] = nth_code(visit.medical_diagnosis, 1)
+
+                elif excel_col == "MEDICAL DX2":
+                    record[excel_col] = nth_code(visit.medical_diagnosis, 2)
+
+                elif excel_col == "Treatment DX 1":
+                    record[excel_col] = nth_code(visit.diagnosis, 1)
+
+                elif excel_col == "Treatment DX 2":
+                    record[excel_col] = nth_code(visit.diagnosis, 2)
+
+                elif mapping == "referring_provider":
+                    raw = getattr(visit, "referring_provider")
+                    raw = raw.strip() if isinstance(raw, str) else raw
+
+                    ref_first, ref_last = split_referring_phys(raw)
+
+                    if excel_col == "FIRSTNAME REFERRING PHYS":
+                        record[excel_col] = ref_first
+                    elif excel_col == "LASTNAME REFERRING PHYS":
+                        record[excel_col] = ref_last
+                    else:
+                        record[excel_col] = None
+
+                elif isinstance(mapping, str) and mapping in cpt:
+                    record[excel_col] = cpt[mapping]
+
+                elif isinstance(mapping, str) and hasattr(visit, mapping):
+                    value = getattr(visit, mapping)
+
+                    if excel_col == "AUTHORIZATION REFERENCE NUMBER":
+                        if isinstance(value, str) and value.strip().lower() in {"x", "eval"}:
+                            value = None
+
+                    record[excel_col] = value
+
+                else:
+                    record[excel_col] = mapping
+
+            correct_primary = None
+            correct_secondary = None
+
+            if coverage:
+                med_payer = (coverage.get("medicare_payer") or "").strip()
+                med_type = (coverage.get("medicare_policy_type") or "").strip()
+                medicaid_payer = (coverage.get("medicaid_payer") or "").strip()
+                medicaid_type = (coverage.get("medicaid_policy_type") or "").strip()
+
+                if med_payer and med_payer.lower() != "medicare":
+                    correct_primary = f"{med_payer} | {med_type}" if med_type else med_payer
+
+                if medicaid_payer and medicaid_payer.lower() != "medicaid":
+                    correct_secondary = f"{medicaid_payer} | {medicaid_type}" if medicaid_type else medicaid_payer
+
+            primary_ins = (getattr(visit, "primary_insurance", None) or "").strip()
+
+            if primary_ins and primary_ins.lower() in {
+                "new york empire medicare",
+                "new york medicare ghi",
+                "new york medicare upstate"
+            }:
+                correct_primary = f"{primary_ins} | Medicare"
+
+            record["Correct Primary Payer"] = correct_primary
+            record["Correct Secondary Payer"] = correct_secondary
+            record["Passed A/B/C"] = "Yes" if passed_abc else "No"
+            record["Met Deductable"] = "Yes" if met_deductable else "No"
+
+            billable_rows.append(record)
+
+    df = pd.DataFrame(billable_rows)
+
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+        df.to_excel(writer, index=False, sheet_name="TimelyFillingNotes")
+    output.seek(0)
+
+    return StreamingResponse(
+        output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=timely_filling_notes.xlsx"}
+    )
+
+
+@router.get("/primary-insurances")
+async def get_primary_insurances(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get distinct primary insurance names from visits and patients tables.
+    """
+    # Get from visits table
+    visits_stmt = select(Visit.primary_insurance).distinct().where(
+        Visit.primary_insurance.isnot(None),
+        Visit.primary_insurance != ""
+    )
+
+    # Get from patients table
+    patients_stmt = select(Patient.primary_insurance).distinct().where(
+        Patient.primary_insurance.isnot(None),
+        Patient.primary_insurance != ""
+    )
+
+    visits_result = await db.execute(visits_stmt)
+    patients_result = await db.execute(patients_stmt)
+
+    visits_insurances = [row[0] for row in visits_result.fetchall() if row[0]]
+    patients_insurances = [row[0] for row in patients_result.fetchall() if row[0]]
+
+    # Combine and deduplicate
+    all_insurances = list(set(visits_insurances + patients_insurances))
+    all_insurances.sort()
+
+    return {"insurances": all_insurances}

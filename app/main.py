@@ -21,6 +21,7 @@ from app.routes import (
     note_details,            # /api/visits/note-details
     billing_import_manual,  # /api/billing/import-billed-excel
     deductibleFile,        # /api/patients/import-deductible-flags
+    upload_millen_invoices,  # /api/upload/millen-invoices
     # visits, invoices, etc. can be added later
 )
 
@@ -93,6 +94,7 @@ protected.include_router(billingDataQueeries.router, tags=["billing"])
 protected.include_router(note_details.router, tags=["notes"])
 protected.include_router(billing_import_manual.router, tags=["billing"])
 protected.include_router(deductibleFile.router, tags=["patients"])
+protected.include_router(upload_millen_invoices.router, tags=["millen"])
 
 # protected.include_router(visits.router, tags=["visits"])
 # protected.include_router(invoices.router, tags=["invoices"])

@@ -10,6 +10,7 @@ load_dotenv()
 
 MONDAY_API_URL = "https://api.monday.com/v2"
 MONDAY_API_KEY = os.getenv("MONDAY_API_KEY")  # Put this in .env
+MONDAY_EXPLANATION_COLUMN_ID = "long_text_mm1kpzvw"
 
 if not MONDAY_API_KEY:
     raise ValueError("❌ Missing MONDAY_API_KEY in .env file")
@@ -43,6 +44,7 @@ def create_monday_item(
     cpt_code: str,
     note_date: str,
     note_id: int,
+    explanation: str | None = None,
 ):
     """
     Create a new Monday.com item on board 18374251033.
@@ -71,6 +73,9 @@ def create_monday_item(
             "text": "Open Case",
         },
     }
+
+    if explanation:
+        column_values[MONDAY_EXPLANATION_COLUMN_ID] = explanation
 
     query = f"""
         mutation {{
@@ -118,4 +123,5 @@ if __name__ == "__main__":
         cpt_code="97110(2),97116(1)",
         note_date="2025-11-11",
         note_id=987654,
+        explanation="Mary Johnson, Note: Daily Note - 3, Visit period was 2025-11-11 17:00 - 2025-11-11 18:00 overlaps with: Jane Doe, Note: Daily Note - 4, Visit period was 2025-11-11 17:30 - 2025-11-11 18:15",
     )
